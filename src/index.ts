@@ -4,12 +4,27 @@ import { ScrapedProduct, ScrapedProductSite } from "./types/ee"
 import { ProductType } from "./types/producttypes"
 import jsdom from "jsdom"
 const { JSDOM } = jsdom
+import { DAO } from "./lib/dao"
+
+const specifyBrowserPath = true;
+
+let browserOption
+  if(specifyBrowserPath) {
+    browserOption = {
+      headless: "new",
+      executablePath: `C:/Program Files (x86)/Google/Chrome/Application/chrome.exe`,
+      ignoreHTTPSErrors: true,
+    }
+  } else {
+    browserOption = {
+      headless: "new",
+      ignoreHTTPSErrors: true,
+    }
+  }
 
 async function scrapePage(url: string, pagenum: number) {
 
-  const browser = await puppeteer.launch({
-    headless: false, executablePath: `C:/Program Files (x86)/Google/Chrome/Application/chrome.exe`, ignoreHTTPSErrors: true,
-  })
+  const browser = await puppeteer.launch(browserOption)
   const page = await browser.newPage()
   let pageSlug = "?page="+pagenum;
 
@@ -43,15 +58,11 @@ async function scrapePage(url: string, pagenum: number) {
   return newPageNum;
 }
 
-
 // ---------------------------------  Scrapping item -------------------------------------------------------
 
 async function scrapeItem(item: Element, productType: ProductType, browser: Browser) {
   const openedPage = await browser.pages()
-  if(openedPage.length <= 0 )browser = await puppeteer.launch({
-    headless: false, 
-    executablePath: `C:/Program Files (x86)/Google/Chrome/Application/chrome.exe`, ignoreHTTPSErrors: true,
-  })
+  if(openedPage.length <= 0 )browser = await puppeteer.launch(browserOption)
 
   // get product page link
   const itemLink = item.querySelector("div.S-product-item__name");
@@ -70,7 +81,6 @@ async function scrapeItem(item: Element, productType: ProductType, browser: Brow
   const dom = new JSDOM(data)
   const document = dom.window.document
 
-  await delayMs(3000)
 
   const mainContent = document.querySelector('.product-intro');
 
@@ -99,8 +109,14 @@ async function scrapeItem(item: Element, productType: ProductType, browser: Brow
 
     images.push(fullImageLink);
   }
+
+  const swiperContent = mainContent.querySelector(".swiper-wrapper");
+  const firstChild = swiperContent.firstElementChild;
+  const productImageLink = await firstChild.querySelector('img.crop-image-container__img')?.getAttribute("src");
+
+  const productImage = "https:"+productImageLink;
   
-  if(!title || !url || !price || !images) {
+  if(!title || !url || !price || !productImage) {
       console.log("Missing data for product")
       return
   }
@@ -111,14 +127,16 @@ async function scrapeItem(item: Element, productType: ProductType, browser: Brow
       title,
       url,
       price: parseFloat(price),
-      images,
+      image: productImage,
       description,
       site: ScrapedProductSite.SHEIN,
       product_type: productType
   }
 
-  // await DAO.storeProduct(product)
   console.log("Scrapped product", product);
+
+  await DAO.storeProduct(product)
+  await delayMs(1000)
 
   await page.close()
 }
@@ -126,10 +144,7 @@ async function scrapeItem(item: Element, productType: ProductType, browser: Brow
 //--------------------------------------------- Get Total Page Number ---------------------------------------
 
 async function getAllPage(url: string) {
-  const browser = await puppeteer.launch({
-    headless: "new",
-    executablePath: `C:/Program Files (x86)/Google/Chrome/Application/chrome.exe`,
-  });
+  const browser = await puppeteer.launch(browserOption);
   const page = await browser.newPage();
 
   await page.goto(url, {
