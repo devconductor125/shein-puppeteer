@@ -18,8 +18,8 @@ export class DAO {
     ): Promise<void> {
         if(!this.supabase) this.init()
 
-        const farfetchId = parseInt(product.url.split("-")[product.url.split("-").length - 1].replace(".aspx",""))
-        const alreadyExists = await this.getProductByFarfetchId(farfetchId)
+        const sheinId = parseInt(product.url.split("-")[product.url.split("-").length - 1].replace(".html",""))
+        const alreadyExists = await this.getProductBySheinId(sheinId)
         if(alreadyExists.hasValue()) {
             console.log("Product already stored in db")
             return
@@ -40,7 +40,7 @@ export class DAO {
      * @param id The products farfetch id
      * @returns An Option containing the products data if it exists
      */
-    static async getProductByFarfetchId(
+    static async getProductBySheinId(
         id: number
     ): Promise<Option<ScrapedProduct>> {
         if(!this.supabase) this.init()

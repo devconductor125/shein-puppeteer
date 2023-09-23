@@ -63,10 +63,11 @@ async function scrapePage(url: string, pagenum: number) {
 async function scrapeItem(item: Element, productType: ProductType, browser: Browser) {
   const openedPage = await browser.pages()
   if(openedPage.length <= 0 )browser = await puppeteer.launch(browserOption)
-
+  
   // get product page link
-  const itemLink = item.querySelector("div.S-product-item__name");
-  const itemPageLink = "https://us.shein.com" + itemLink.querySelector('a').getAttribute("href").split("?")[0];
+  await delayMs(500)
+  const itemLink = item.querySelector(".S-product-item__name");
+  const itemPageLink = "https://us.shein.com" + itemLink.querySelector('a')?.getAttribute("href").split("?")[0];
 
   // Open new page
   const page = await browser.newPage()
@@ -75,7 +76,9 @@ async function scrapeItem(item: Element, productType: ProductType, browser: Brow
     timeout: 0,
   });
   await page.setViewport({width: 1080, height: 1024});
-  await delayMs(8000)
+
+  await page.waitForSelector(".product-intro");
+  await delayMs(3000)
   
   const data = await page.content()
   const dom = new JSDOM(data)
