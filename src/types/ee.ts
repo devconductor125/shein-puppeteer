@@ -5,7 +5,7 @@ export type ScrapedProduct = {
     url: string,
     title: string,
     images: string[],
-    description: Object[],
+    description: string,
     site: ScrapedProductSite,
     product_type: ProductType,
 }

@@ -1,14 +1,15 @@
 require("dotenv").config()
-import puppeteer from 'puppeteer';
+import puppeteer, { Browser } from 'puppeteer';
 import { ScrapedProduct, ScrapedProductSite } from "./types/ee"
 import { ProductType } from "./types/producttypes"
 import jsdom from "jsdom"
 const { JSDOM } = jsdom
 
 async function scrapePage(url: string, pagenum: number) {
-  const startTime  = new Date().getTime();
 
-  const browser = await puppeteer.launch({headless: 'new', executablePath: `C:/Program Files (x86)/Google/Chrome/Application/chrome.exe`})
+  const browser = await puppeteer.launch({
+    headless: false, executablePath: `C:/Program Files (x86)/Google/Chrome/Application/chrome.exe`, ignoreHTTPSErrors: true,
+  })
   const page = await browser.newPage()
   let pageSlug = "?page="+pagenum;
 
@@ -17,17 +18,13 @@ async function scrapePage(url: string, pagenum: number) {
     timeout: 0,
   });
   await page.setViewport({width: 1080, height: 1024})
-
   console.log("Scraping product data...for ", pagenum, "th page");
-
-  await page.waitForSelector("section[roll='main']", { timeout: 120000 });
+  await page.waitForSelector(".product-list");
 
   const data = await page.content()
   const dom = new JSDOM(data)
   const document = dom.window.document
 
-  // const wholePage = document.querySelector("section[roll='main']");
-  // const searchResult = wholePage.querySelector('.product-list');
   const itemList  = document.querySelector('.product-list')
 
   if(!itemList) throw new Error("No items found")
@@ -35,15 +32,13 @@ async function scrapePage(url: string, pagenum: number) {
   const items = itemList.children
 
   for(let item of items) {
-      await scrapeItem(item, ProductType.SHOE);
+      await scrapeItem(item, ProductType.SHOE, browser);
+      await delayMs(1000)
   }
 
   await page.close()
   await browser.close()
   
-  const endTime  = new Date().getTime();
-  console.log("Page Time: ", (endTime - startTime)/1000)
-
   let newPageNum = pagenum+1;
   return newPageNum;
 }
@@ -51,61 +46,56 @@ async function scrapePage(url: string, pagenum: number) {
 
 // ---------------------------------  Scrapping item -------------------------------------------------------
 
-async function scrapeItem(item: Element, productType: ProductType) {
-  const startTime  = new Date().getTime();
+async function scrapeItem(item: Element, productType: ProductType, browser: Browser) {
+  const openedPage = await browser.pages()
+  if(openedPage.length <= 0 )browser = await puppeteer.launch({
+    headless: false, 
+    executablePath: `C:/Program Files (x86)/Google/Chrome/Application/chrome.exe`, ignoreHTTPSErrors: true,
+  })
 
   // get product page link
   const itemLink = item.querySelector("div.S-product-item__name");
-  const itemPageLink = "https://us.shein.com" + itemLink.querySelector('a').getAttribute("href");
-
-  console.log("Item link: ",itemPageLink)
+  const itemPageLink = "https://us.shein.com" + itemLink.querySelector('a').getAttribute("href").split("?")[0];
 
   // Open new page
-  const browser = await puppeteer.launch({headless: 'new', executablePath: `C:/Program Files (x86)/Google/Chrome/Application/chrome.exe`})
   const page = await browser.newPage()
   await page.goto(itemPageLink, {
     waitUntil: "load",
     timeout: 0,
   });
-  await page.setViewport({width: 1080, height: 1024})
+  await page.setViewport({width: 1080, height: 1024});
+  await delayMs(8000)
   
-  page.waitForSelector(".product-intro");
-
   const data = await page.content()
   const dom = new JSDOM(data)
   const document = dom.window.document
+
+  await delayMs(3000)
 
   const mainContent = document.querySelector('.product-intro');
 
   const title = mainContent.querySelector(".product-intro__head-name")?.textContent
   const url = itemPageLink
-
   const price = mainContent.querySelector('.product-intro__head-mainprice').querySelector(".discount")?.textContent?.replace("$","")?.replace(",","");
-
+  
   const detailTable = document.querySelector('.product-intro__description-table');
-
   const detailList = detailTable.children
-
-  const description = []
-
+  let descriptionText = ""
   for(let detailItem of detailList) {
-    const keyName = detailItem.querySelector(".key")?.textContent.replace(":", "").trim();
-    const value = detailItem.querySelector(".value")?.innerText;
-    const detail = {
-      [keyName]: value
-    }
-    description.push(detail);
+    const keyName = detailItem.querySelector(".key")?.textContent;
+    const value = detailItem.querySelector(".val")?.textContent.trim();
+    descriptionText += keyName+value+", "
   }
 
-  const swiperContent = mainContent.querySelector(".swiper-wrapper");
-  const swiperDivs = swiperContent.children
+  const thumbnaiList = mainContent.querySelector(".product-intro__thumbs-inner");
+  const thumbnails = thumbnaiList.children
 
   const images = []
 
-  for (let swiperItem of swiperDivs) {
-    const imageLink = swiperItem.querySelector('img.crop-image-container__img')?.getAttribute("src");
+  for (let thumbnail of thumbnails) {
+    
+    const imageLink = await thumbnail.querySelector('img.crop-image-container__img')?.getAttribute("src");
     const fullImageLink = "https:"+imageLink;
-    console.log("ImageLink : ", fullImageLink)
 
     images.push(fullImageLink);
   }
@@ -114,6 +104,8 @@ async function scrapeItem(item: Element, productType: ProductType) {
       console.log("Missing data for product")
       return
   }
+
+  const description = descriptionText.slice(0, -2);
 
   const product: ScrapedProduct = {
       title,
@@ -126,21 +118,16 @@ async function scrapeItem(item: Element, productType: ProductType) {
   }
 
   // await DAO.storeProduct(product)
-
-  await page.close()
-  await browser.close()
   console.log("Scrapped product", product);
 
-  const endTime  = new Date().getTime();
-  console.log("Item Time: ", (endTime - startTime)/1000)
+  await page.close()
 }
 
-//--------------------------------------------- Get Total Page ---------------------------------------
+//--------------------------------------------- Get Total Page Number ---------------------------------------
 
 async function getAllPage(url: string) {
-  const startTime  = new Date().getTime();
   const browser = await puppeteer.launch({
-    headless: false,
+    headless: "new",
     executablePath: `C:/Program Files (x86)/Google/Chrome/Application/chrome.exe`,
   });
   const page = await browser.newPage();
@@ -160,11 +147,7 @@ async function getAllPage(url: string) {
   await browser.close()
   const totalNum = totalPage.innerHTML.replace("Total ", "").replace("Pages", '');
 
-  const endTime = new Date().getTime();
-  console.log((endTime-startTime)/1000);
   return parseInt(totalNum);
-
-
 }
 
 async function scrapeProduct(url: string): Promise<void> {
@@ -176,6 +159,10 @@ async function scrapeProduct(url: string): Promise<void> {
       console.log("Accessing next page...")
       currentPage = await scrapePage(url, currentPage)
   }
+}
+
+async function delayMs(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 scrapeProduct("https://us.shein.com/Men-Shoes-c-2089.html");
